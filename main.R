@@ -1,180 +1,19 @@
 # Francesco Cabiddu, CabidduF@cardiff.ac.uk
+# Study 1 - PhD, Cardiff University
 
 # load libraries ----------------------------------------------------------
 lib <- c(
   "magrittr", "tidyverse",
   "stringr",
-  "beepr", "fastmatch"#,
-  #"mailR", "stringdist", "data.table"
+  "beepr", "fastmatch",
+  "mailR", "childesr", "viridis"
+  #"stringdist", "data.table"
 )
 lapply(lib, require, character.only = TRUE)
 rm(lib)
 
+
 # homemade funs -----------------------------------------------------------
-# import and fist cleaning of text
-first_wash <- function(DF, text_set) {
-  DF %>%
-    lapply(function(file) {
-      print(file)
-      
-      output <- read_lines(paste(path_to_corpora, 
-                                 file, 
-                                 sep = "/")) %>%
-        str_replace_all("\t", " ") %>%
-        enframe(name = NULL) %>%
-        (function(x) {
-          # fix problem with cut utterances
-          for (i in seq_along(x$value)) {
-            if (str_detect(x$value[i], "^ ")) {
-              if (str_detect(x$value[i-1], "^[^ ]{1}")) {
-                x$value[i-1] <- paste(x$value[i-1], x$value[i], sep = "")
-              } else if (str_detect(x$value[i-2], "^[^ ]{1}")) {
-                x$value[i-2] <- paste(x$value[i-2], x$value[i], sep = "")
-              } else if (str_detect(x$value[i-3], "^[^ ]{1}")) {
-                x$value[i-3] <- paste(x$value[i-3], x$value[i], sep = "")
-              } else if (str_detect(x$value[i-4], "^[^ ]{1}")) {
-                x$value[i-4] <- paste(x$value[i-4], x$value[i], sep = "")
-              } else if (str_detect(x$value[i-5], "^[^ ]{1}")) {
-                x$value[i-5] <- paste(x$value[i-5], x$value[i], sep = "")
-              } else if (str_detect(x$value[i-6], "^[^ ]{1}")) {
-                x$value[i-6] <- paste(x$value[i-6], x$value[i], sep = "")
-              } else if (str_detect(x$value[i-7], "^[^ ]{1}")) {
-                x$value[i-7] <- paste(x$value[i-7], x$value[i], sep = "")
-              } else if (str_detect(x$value[i-8], "^[^ ]{1}")) {
-                x$value[i-8] <- paste(x$value[i-8], x$value[i], sep = "")
-              }
-            }
-          }
-          
-          x
-        }) %>%
-        filter(!str_detect(value, "^ |^@")) 
-      
-      if (text_set %in% c("wells")) {
-        output %<>%
-          mutate(value = value %>% 
-                   str_remove_all("[(]{1}[0-9]+[.]{1}[)]{1} "))
-      }
-      
-      if (text_set %in% c("thomas", "tommerdahl")) {
-        output %<>%
-          mutate(value = value %>% 
-                   str_remove_all(" \025[0-9]+_[0-9]+\025$"))
-      }
-      
-      if (text_set %in% c("general", "thomas", "tommerdahl", "wells")) {
-        output %>%
-        {.$value %>% 
-            paste(collapse = "") %>%
-            str_extract_all("[*]{1}[A-Z]{3}:[^%*]+%mor[^%]+%gra[^*]+")} %>%
-            {.[[1]]} %>%
-          enframe(name = NULL) %>%
-          separate(value, c("id_utt", "mor_gra"), sep = "%mor: ") %>% 
-          separate(mor_gra, c("mor", "gra"), sep = "%gra: ") %>%
-          mutate(id = str_match(id_utt, "^[*]{1}([A-Z]{3}):")[,2],
-                 id_utt = str_remove(id_utt, "^[*]{1}[A-Z]{3}: ")) %>%
-          rename(utt = id_utt) %>%
-          select(id, everything(), -gra) %>%
-          mutate_at(.funs = list(~str_split(., " ")), .vars = vars(utt:mor)) %>%
-          mutate_at(.funs = list(length = ~sapply(., length)), .vars = vars(utt:mor)) %>%
-          filter(utt_length == mor_length) %>%
-          select(-c(utt_length, mor_length)) %>%
-          mutate(utt_id = 1:n(),
-                 corpus_id = file) %>% 
-          group_by(utt_id) %>%
-          group_split() %>%
-          lapply(function(sub_df) {
-            tibble(corpus_id = sub_df$corpus_id,
-                   utt_id = sub_df$utt_id,
-                   id = sub_df$id,
-                   utt = sub_df$utt %>% unlist,
-                   mor = sub_df$mor %>% unlist)
-          }) %>%
-          bind_rows %>%
-          # delete special charachters and punctuation
-          mutate(utt = tolower(utt) %>%
-                   str_remove("@[a-z]+$") %>%
-                   str_remove_all("[^a-z'+_]+") %>%
-                   str_replace_all("[+]+", "_")) %>% 
-          filter(str_detect(utt, "[a-z]+")) %>%
-          group_by(utt_id) %>%
-          group_split %>%
-          lapply(function(sub_df) {
-            tibble(corpus_id = sub_df$corpus_id[1],
-                   utt_id = sub_df$utt_id[1],
-                   id = sub_df$id[1],
-                   utt = sub_df$utt %>% paste(collapse = " "),
-                   mor = sub_df$mor %>% paste(collapse = " "))
-          }) %>%
-          bind_rows %>%
-          mutate(utt = utt %>%
-                   str_replace_all("' | '", " "))
-      } else if (text_set == "forrester") {
-        output %>%
-          filter(!str_detect(value, "^%gpx|^%com")) %>%
-          filter(!str_detect(value, "xx")) %>%
-          mutate(value = str_replace(value, "\\: ", "_9_9_9_")) %>% 
-          separate(value, c("id", "utt"), sep = "_9_9_9_") %>% 
-          mutate(id = id %>% str_remove("^\\*")) %>%
-          mutate(utt = tolower(utt)) %>%
-          mutate(utt = utt %>%
-                   str_remove_all("\\[% [a-zA-Z]+\\] | \\[% [^\\]]+\\]") %>%
-                   str_remove_all("&=[a-zA-Z]+ | &=[a-zA-Z]+")) %>%
-          mutate(utt = utt %>%
-                   str_remove_all("[^ a-zA-Z'+_]+")) %>%
-          (function(z) {
-            z %>%
-              mutate(corpus_id = file,
-                     utt_id = 1:nrow(z),
-                     mor = NA)
-          }) %>% 
-          select(corpus_id, utt_id, id, utt, mor) %>%
-          mutate(utt = utt %>%
-                   str_replace_all("' | '", " "))
-      }
-    })
-}
-
-extract_age <- function(file) {
-  print(file)
-  
-  # the output is a dataframe with years, months, and days
-  output <- read_lines(paste(path_to_corpora, 
-                             file, 
-                             sep = "/")) %>%
-    str_replace_all("\t", " ") %>%
-    enframe(name = NULL) %>%
-    filter(str_detect(value, "^@ID")) %>%
-    unlist %>%
-    str_extract("[|]{1}([0-9]+;[0-9+]+[.]{1}[0-9]+)[|]{1}|[|]{1}([0-9]+;[0-9+]+[.]{1})[|]{1}|[|]{1}([0-9]+;)[|]{1}") %>%
-    na.omit %>%
-    str_split(";|[.]{1}")
-  
-  if (is_empty(output)) {
-    output <- rep(NA, 3)
-  } else {
-    output %<>%
-    {.[[1]]}
-  }
-  
-  output %>%
-    str_remove_all("[|]{1}") %>%
-    as.numeric %>%
-    (function(x) {
-      length(x) <- 3
-      
-      x %<>%
-        as.matrix %>%
-        t
-      
-      colnames(x) <- c("year", "month", "day")
-      x
-    }) %>%
-    as_tibble %>%
-    mutate(corpus_id = file) %>%
-    select(corpus_id, everything())
-}
-
 convert_phonemes <- function(df) {
   # create a column of converted phonemes to single characters for each word
   df %>%
@@ -185,108 +24,126 @@ convert_phonemes <- function(df) {
              }))
 }
 
+adj_poss <- function(x) {
+  # all possible adjacent combinations of phonemes in a word, including the word itself
+  n <- length(x)
+  if(n == 1L) return(NA) # if a word is monophonemic return NA
+  idx <- expand.grid(start = 1L:n, len = 2L:(n))
+  idx$end <- idx$start + idx$len - 1L
+  idx <- idx[idx$end <= n, ]
+  Map(function(start, end) x[start:end], idx$start, idx$end)
+}
+
+subset_utterances <- function(df, corpora_age, extension_random) {
+  # Note. this function matches N utterances and MLU but does not consider MLU SD.
+  df %>%
+    filter(speaker_role != "Target_Child") %>%
+    filter(target_child_age_year %in% corpora_age) %>%
+    group_by(target_child_age_year) %>%
+    sample_n(corpora$all %>%
+               filter(speaker_role != "Target_Child") %>%
+               group_by(target_child_age_year) %>%
+               summarise(N_utt = n()) %>%
+               ungroup %>%
+               filter(target_child_age_year %in% 1:4) %>%
+               {.$N_utt} %>%
+               min %>%
+               # first subset each year number of utterances similar to minimum
+               {. + extension_random}) %>%
+    ungroup %>%
+    mutate(LU = phon %>%
+             str_split(" ") %>%
+             sapply(length)) %>%
+    arrange(target_child_age_year, desc(LU)) %>%
+    group_by(target_child_age_year) %>%
+    group_split %>%
+    lapply(function(DF) {
+      lu_reference <- corpora$all %>%
+        filter(speaker_role != "Target_Child") %>%
+        filter(target_child_age_year %in% 1) %>%
+        mutate(LU = phon %>%
+                 str_split(" ") %>%
+                 sapply(length)) %>%
+        arrange(target_child_age_year, desc(LU)) %>% 
+        summarise(MLU = mean(LU)) %>%
+        {.$MLU}
+      
+      while (mean(DF$LU) > lu_reference) {
+        # then exclude utterances from longest to shorter to match MLU
+        DF <- DF[-1, ]
+      }
+      
+      DF 
+    }) %>%
+    bind_rows
+}
+
+save_input <- function(utt, file_name, segmented) {
+  if (segmented == TRUE) {
+    write_lines(utt, file_name)
+  } else if (segmented == FALSE) {
+    write_lines(utt %>%
+                  str_remove_all("[|]"), file_name)
+  }
+}
+
 # import corpora ----------------------------------------------------------
-path_to_corpora <- 
-  "/Users/francesco/Dropbox/phd/Incrementality/corpora/CDS/TXT_format"
-
-filelist <- list.files(
-  path = path_to_corpora,
-  pattern = "txt$",
-  all.files = TRUE,
-  recursive = TRUE)
-
-# leave out forrester because has a different pattern to match
-filelist_not_forr_tho_to_we <- filelist[filelist %>% str_detect("Forrester|Thomas|Tommerdahl|Wells") %>% {!.}]
-filelist_forr <- filelist[filelist %>% str_detect("Forrester")]
-filelist_tho <- filelist[filelist %>% str_detect("Thomas")]
-filelist_to <- filelist[filelist %>% str_detect("Tommerdahl")]
-filelist_we <- filelist[filelist %>% str_detect("Wells")]
-
-time1 <- Sys.time()
-
-corpora_not_forr_tho_to_we <- filelist_not_forr_tho_to_we %>%
-  first_wash(text_set = "general")
-corpora_forr <- filelist_forr %>%
-  first_wash(text_set = "forrester")
-corpora_tho <- filelist_tho %>%
-  first_wash(text_set = "thomas")
-corpora_to <- filelist_to %>%
-  first_wash(text_set = "tommerdahl")
-corpora_we <- filelist_we %>%
-  first_wash(text_set = "wells")
-
-corpora <- corpora_not_forr_tho_to_we %>%
-  bind_rows %>%
-  rbind(
-    corpora_forr %>%
-      bind_rows
-  ) %>%
-  rbind(
-    corpora_tho %>%
-      bind_rows
-  ) %>%
-  rbind(
-    corpora_to %>%
-      bind_rows
-  ) %>%
-  rbind(
-    corpora_we %>%
-      bind_rows
-  )
-
-corpora %<>%
-  mutate(utt = utt %>%
-           str_replace_all("' | '|'$|^'", " ") %>%
-           str_remove_all("[ ]{2,}") %>%
-           str_remove_all("[_]{2,}") %>%
-           str_remove_all("_$|_ $|^_|^_ | _ ") %>%
-           str_remove_all("[+]{1} | [+]{1}|^\\+|\\+$") %>%
-           str_remove_all("^ | $") %>%
-           str_remove_all("[ ]{2,}"))
-           
-# compare corpora lexical measures ----------------------------------------
-corpora %<>%
-  mutate(utt = str_split(utt, " "),
-         mor = str_split(mor, " "))
-
-corpora %<>%
-  mutate(row_id = 1:length(id)) %>%
-  group_by(row_id) %>%
-  group_split %>%
-  lapply(function(sub_df) {
-    tibble(corpus_id = sub_df$corpus_id,
-           utt_id = sub_df$utt_id,
-           id = sub_df$id,
-           utt = sub_df$utt %>% unlist,
-           mor = sub_df$mor %>% unlist)
-  }) %>% bind_rows
-
-corpora_typ <- corpora %>%
-  distinct(utt) %>%
-  arrange(utt) %>%
+corpora <- list() %>%
   (function(x) {
-    list(single_word = filter(x, !str_detect(utt, "[_+]+")),
-         multi_word = filter(x, str_detect(utt, "[_+]+")))
+    x$all <- get_utterances(
+      # database version used: '2018.1'
+      collection = "Eng-UK", 
+      corpus = c("Belfast", "Fletcher", "Manchester", 
+                 "Thomas", "Tommerdahl", "Wells",
+                 "Forrester", "Lara")
+    ) %>%
+      # only select columns of interest
+      select(corpus_id = corpus_name,
+             transcript_id,
+             target_child_id,
+             target_child_name,
+             target_child_sex,
+             target_child_age,
+             speaker_role,
+             speaker_name, 
+             speaker_id,
+             speaker_code,
+             utt_id = utterance_order,
+             utt_type = type, 
+             gloss,
+             stem,
+             part_of_speech) %>%
+      arrange(transcript_id) %>%
+      # symbols + and _ are used interchangeably for compounds, 
+      # so convert + to _ for consistency
+      mutate(gloss = gloss %>%
+               str_replace_all("\\+", "_")) %>%
+      # every word in gloss and stem columns to lowercase
+      mutate_at(.funs = list(~tolower(.)), .vars = vars(gloss:stem)) 
+    
+    return(x)
   })
 
-time2 <- Sys.time()
-time2 - time1
-
-# import dictonary
+# import CMU and words transcription ----------------------------
 load("~/Dropbox/phd/Incrementality/analysis_R/CMU_DICT.RData")
 
 CMU_DICT %<>%
   (function(list_dfs) {
     additional_compounds <- list_dfs$words %>%
+      # extract some compounds that have the _ sign, 
+      # and are still included in the single words dataframe!
       filter(str_detect(word, "_"))
     
     list_dfs$words %<>%
+      # modify words for consistency with corpora  
       filter(!str_detect(word, "_")) %>%
       mutate(word = word %>%
                tolower %>%
                str_replace_all("@", "'"))
     
     list_dfs$compounds %<>%
+      # add additional compounds to compound dataframe
+      # and modify words for consistency with corpora
       rbind(
         additional_compounds
       ) %>%
@@ -298,91 +155,80 @@ CMU_DICT %<>%
     list_dfs
   })
 
-corpora_typ$single_word %<>%
-  left_join(., CMU_DICT$words, by = c("utt" = "word"))
-
-corpora_typ$multi_word %<>%
-  left_join(., CMU_DICT$compounds, by = c("utt" = "word"))
-
-corpora_typ$multi_word %<>%
-  filter(is.na(phon)) %>%
-  mutate(phon = utt %>%
-           str_split("_") %>%
-           sapply(function(x) {
-             CMU_DICT$words$phon[fmatch(x,
-                                        CMU_DICT$words$word)] %>%
-               paste(collapse = "_")
-           })) %>%
-  mutate(phon = ifelse(str_detect(phon, "NA"), NA, phon))
-
-corpora_typ %<>%
-  bind_rows %>%
-  arrange(utt)
-  
-  # convert single and multi-word sequences
-corpora %<>%
-  left_join(., corpora_typ, by = "utt")
-
-  # get rid of utterances where conversion is missing for a word
-corpora %<>%
-  group_by(corpus_id, utt_id) %>%
-  filter(all(!is.na(phon))) %>%
-  ungroup
-
-# assign measures
-load("~/Dropbox/phd/Incrementality/analysis_R/spok_bnc_lexical.RData")
-load("~/Dropbox/phd/Incrementality/analysis_R/spok_bnc_tokens.RData")
-
-spok_bnc_typ_measures <- measures %>%
-  select(phon, contains("spok_bnc")) %>%
-  mutate(phonemic_len = phon %>%
-           str_split("_") %>%
-           sapply(length)) %>%
+corpora$converted <- tibble(word_type = corpora$all$gloss %>%
+                        str_split(" ") %>%
+                        unlist %>%
+                        unique %>%
+                        sort) %>%
   (function(x) {
-    colnames(x) <- str_remove(colnames(x), "spok_bnc_")
-    x
+    # create a similar CMU list, with dataframes for single words and compounds
+    list(single_word = filter(x, !str_detect(word_type, "[_+]+")) %>%
+           # add a column with phonetic transcription
+           # if no trascription is available, NA value is assigned
+           left_join(., CMU_DICT$words, by = c("word_type" = "word")),
+         multi_word = filter(x, str_detect(word_type, "[_+]+")) %>%
+           left_join(., CMU_DICT$compounds, by = c("word_type" = "word")) %>%
+           # convert each single word within a compound
+           # if one sigle words is not translated assign NA to compound
+           (function(df) {
+             df_ready <- df %>%
+               # leave out compounds already translated with previous step
+               filter(!is.na(phon))
+             
+             df_not_ready <- df %>%
+               filter(is.na(phon)) %>% 
+               mutate(phon = word_type %>%
+                        str_split("_") %>%
+                        sapply(function(y) {
+                          CMU_DICT$words$phon[fmatch(y,
+                                                     CMU_DICT$words$word)] %>%
+                            paste(collapse = "_")
+                        })) %>%
+               mutate(phon = ifelse(str_detect(phon, "NA"), NA, phon))
+             
+             df_ready %>%
+               rbind(df_not_ready)
+           }))
   }) %>%
-  filter(!is.na(freq)) ; rm(measures)
-  
-corpora %<>%
-    left_join(., spok_bnc_typ_measures, by = "phon")
-
-spok_bnc_typ <- SPOK_BNC %>%
-  filter(!str_detect(c5, "NN2")) %>%
-  left_join(., spok_bnc_typ_measures, by = "phon") %>%
-  distinct(phon, .keep_all = TRUE)
-
-# prepare dfs for segmentation algorithms  -------------------------------------------------------------------
-age_table <- filelist_not_forr_tho_to_we %>%
-  c(filelist_forr, filelist_tho, filelist_to, filelist_we) %>%
-  lapply(extract_age) %>%
+  # reunite single words and compounds into a single dataframe, unpacking the list
   bind_rows %>%
-  arrange(year, month, day)
+  arrange(word_type)
 
-# exclude files that don't have any age assigned
-age_table %<>%
-  na.omit
+corpora$all %<>%
+  # assign phon variable with transcribed utterances (takes ~5 min)
+  mutate(phon = gloss %>%
+           str_split(" ") %>%
+           lapply(function(utt) {
+             corpora$converted$phon[fmatch(utt, 
+                                           corpora$converted$word_type)] %>%
+               paste(collapse = " ")
+           })) %>%
+  # if a word in an utterance is not transcribed, assign NA to whole utterance
+  mutate(phon = ifelse(str_detect(phon, "NA"), NA, phon) %>%
+           unlist) %>%
+  # filter out utterances that are not transcribed correctly
+  filter(!is.na(phon)) %>%
+  # create a year age variable 
+  mutate(target_child_age_year = ifelse(target_child_age < 24, 1,
+                                        ifelse(target_child_age >= 24 & target_child_age < 36, 2,
+                                               ifelse(target_child_age >= 36 & target_child_age < 48, 3,
+                                                      ifelse(target_child_age >= 48 & target_child_age < 60, 4,
+                                                             ifelse(target_child_age >= 60 & target_child_age < 72, 5,
+                                                                    ifelse(target_child_age >= 72 & target_child_age < 84, 6,
+                                                                           ifelse(target_child_age >= 84 & target_child_age < 96, 7,
+                                                                                  ifelse(target_child_age >= 96 & target_child_age < 108, 8, 9))))))))) %>%
+  
+  rename(target_child_age_month = target_child_age) %>%
+  select(corpus_id:target_child_age_month, target_child_age_year, speaker_role:phon) 
 
-corpora %<>%
-  left_join(., age_table, by = "corpus_id")
-
-number_to_sample <- corpora %>%
-  filter(!id %in% c("CHI")) %>%
-  arrange(year, month) %>%
-  filter(!is.na(year) & !is.na(month) & !is.na(day)) %>%
-  group_by(year, corpus_id) %>%
-  summarise(N_utterance = length(unique(utt_id))) %>%
-  group_by(year) %>%
-  summarise(N_utterance = sum(N_utterance)) %>%
-  ungroup %>%
-  filter(year %in% 1:4) %>%
-  filter(N_utterance == min(N_utterance)) %>%
-  {.$N_utterance[1]}
-
+# corpora preparation  -----------------------------
 # convert phonemes into single characters 
 phonemes_converted <- c(letters, LETTERS)[1:39] %>%
+  # convert each possible phoneme in a single letter (for word segmentation algorithms)
   (function(x) {
-    names(x) <- corpora$phon %>%
+    names(x) <- corpora$all$phon %>%
+      str_split(" ") %>% 
+      unlist %>%
       str_split("_") %>%
       unlist %>%
       unique %>%
@@ -391,51 +237,502 @@ phonemes_converted <- c(letters, LETTERS)[1:39] %>%
     x
   })
 
-corpora_input <- corpora %>%
-  filter(!id %in% c("CHI")) %>%
-  filter(year %in% 1:4) %>%
+corpora$converted %<>%
+  # create a variable of converted phonetic words
   convert_phonemes %>%
-  group_by(corpus_id, utt_id) %>%
-  group_split %>%
+  mutate(phon_converted = ifelse(str_detect(phon_converted, "NA"), NA, phon_converted)) 
+
+segmentation <- list() %>%
+  # match corpora by age (sampling equal number of utterances)
+  (function(LIST) {
+    LIST$input <- list()
+    
+    set.seed(18854)
+    LIST$input$basic <- corpora$all %>%
+      # select only utterances spoken by speakers who are not the child
+      # and sample number of utterances as less populated year
+      filter(speaker_role != "Target_Child") %>%
+      filter(target_child_age_year %in% 1:4) %>%
+      group_by(target_child_age_year) %>%
+      sample_n(corpora$all %>%
+                 filter(speaker_role != "Target_Child") %>%
+                 group_by(target_child_age_year) %>%
+                 summarise(N_utt = n()) %>%
+                 ungroup %>%
+                 filter(target_child_age_year %in% 1:4) %>%
+                 {.$N_utt} %>%
+                 min) %>%
+      ungroup %>%
+      arrange(target_child_age_year) %>%
+      # created a variable of converted phonetic utterances (word separator = "|")
+      mutate(phon_converted = phon %>%
+               str_split(" ") %>%
+               lapply(function(word) {
+                 corpora$converted$phon_converted[fmatch(word, corpora$converted$phon)] %>%
+                   paste(collapse = "|")
+               })) %>%
+      # add separator at the end of utterance
+      mutate(phon_converted = phon_converted %>%
+               str_replace("$", "|"))
+    
+    return(LIST)
+  })
+
+segmentation$input$mlu <- corpora$all %>%
+  # match corpora by age and MLU (takes ~20 min)
+  (function(DF) {
+    set.seed(219900)
+    
+    DF %>%
+      filter(speaker_role != "Target_Child") %>%
+      filter(target_child_age_year %in% 1) %>%
+      mutate(LU = phon %>%
+               str_split(" ") %>%
+               sapply(length)) %>%
+      arrange(target_child_age_year, desc(LU)) %>%
+      rbind(
+        subset_utterances(corpora$all, 
+                          corpora_age = 2, 
+                          extension_random = 6000)
+      ) %>%
+      rbind(
+        subset_utterances(corpora$all, 
+                          corpora_age = 3, 
+                          extension_random = 11000)
+      ) %>%
+      rbind(
+        subset_utterances(corpora$all, 
+                          corpora_age = 4, 
+                          extension_random = 13000)
+      ) %>%
+      # created a variable of converted phonetic utterances (word separator = "|")
+      mutate(phon_converted = phon %>%
+               str_split(" ") %>%
+               lapply(function(word) {
+                 corpora$converted$phon_converted[fmatch(word, corpora$converted$phon)] %>%
+                   paste(collapse = "|")
+               })) %>%
+      # add separator at the end of utterance
+      mutate(phon_converted = phon_converted %>%
+               str_replace("$", "|")) %>%
+      # reshuffle the utterances at each year 
+      # to avoid descending order of length of utterance
+      group_by(target_child_age_year) %>%
+      sample_n(n()) %>%
+      ungroup
+  })
+
+# load old dataset to match output, forgot to put set.seed(2199999) when sampling
+# REMINDER: rerun puddle with new corpora with set.seed and update script! 
+load("~/Dropbox/phd/Incrementality/analysis_R/corpora_input_MLU.RData")
+segmentation$input$mlu <- corpora_input_MLU
+rm(corpora_input_MLU)
+
+# save input to workspace
+#save_input(segmentation$input$basic$phon_converted,
+#           "input_basic_segmented.txt",
+#           segmented = TRUE)
+
+#save_input(segmentation$input$basic$phon_converted,
+#           "input_basic_unsegmented.txt",
+#           segmented = FALSE)
+
+#save_input(segmentation$input$mlu$phon_converted,,
+#           "input_mlu_segmented.txt",
+#           segmented = TRUE)
+
+#save_input(segmentation$input$mlu$phon_converted,,
+#           "input_mlu_unsegmented.txt",
+#           segmented = FALSE)
+
+# spok_bnc, plurals, lexical measures ----------------------------
+# import Spoken BNC types with associated lexical measures
+load("~/Dropbox/phd/Incrementality/analysis_R/spok_bnc_lexical.RData")
+# import Spoken BNC tokens
+load("~/Dropbox/phd/Incrementality/analysis_R/spok_bnc_tokens.RData")
+
+spok_bnc <- "empty" %>%
+  (function(empty) {
+    lexical_measures <- measures %>%
+      # only select spok_bnc measures
+      select(phon, contains("spok_bnc")) %>%
+      mutate(phonemic_len = phon %>%
+               str_split("_") %>%
+               sapply(length)) %>%
+      (function(x) {
+        colnames(x) <- str_remove(colnames(x), "spok_bnc_")
+        x
+      }) %>%
+      filter(!is.na(freq))
+    
+    list(
+      all = SPOK_BNC,
+      lexical_measures = lexical_measures,
+      plurals = SPOK_BNC %>%
+        # create table of spoken bnc plurals
+        filter(str_detect(c5, "NN2")) %>% 
+        select(word) %>% 
+        mutate(word = tolower(word) %>%
+                 str_replace_all("\\+", "_") %>%
+                 str_replace_all("@", "'")) %>%
+        distinct(word),
+      types = SPOK_BNC %>%
+        # create spoken bnc types table and exclude plurals
+        distinct(phon) %>%
+        inner_join(., lexical_measures, by = c("phon")) # it will exclude plurals
+    )
+  }) ; rm(measures, SPOK_BNC)
+
+corpora$types <- corpora$all %>%
+  # create a corpora type table with lexical measures associated
+  filter(speaker_role != "Target_Child") %>%
+  mutate(gloss = gloss %>%
+           str_split(" "),
+         phon = phon %>%
+           str_split(" ")) %>%
+  group_by(corpus_id) %>%
+  group_split() %>%
   lapply(function(sub_df) {
     tibble(corpus_id = sub_df$corpus_id[1],
-           utt_id = sub_df$utt_id[1],
-           id = sub_df$id[1],
-           year = sub_df$year[1],
-           month = sub_df$month[1],
-           day = sub_df$day[1],
-           utt_orth = paste(sub_df$utt, collapse = " "),
-           mor = paste(sub_df$mor, collapse = " "),
-           utt_phon = paste(sub_df$phon, collapse = " "),
-           utt_phon_converted = paste(sub_df$phon_converted, collapse = "|"))
+           gloss = sub_df$gloss %>% unlist,
+           phon = sub_df$phon %>% unlist)
   }) %>%
-    bind_rows
+  bind_rows %>%
+  # exclude spoken bnc plurals
+  filter(!gloss %in% spok_bnc$plurals$word) %>%
+  group_by(corpus_id) %>%
+  distinct(phon) %>%
+  select(corpus_id, phon) %>%
+  # assign measures
+  left_join(., spok_bnc$lexical_measures, by = "phon")
 
-set.seed(12776)
-corpora_input %<>%
-  group_by(year) %>%
-  sample_n(number_to_sample) %>%
-  ungroup
+randomisation <- "empty" %>%
+  (function(empty) {
+    number_to_sample <- corpora$all %>%
+      # minimum number of tokens in a corpus
+      filter(speaker_role != "Target_Child") %>%
+      group_by(corpus_id) %>%
+      summarise(N_tok = gloss %>%
+                  str_split(" ") %>%
+                  unlist %>%
+                  length) %>%
+                  {.$N_tok} %>%
+      min
+    
+    list(
+      types =
+        corpora$all %>%
+          # create type tables of corpora after sampling by minimum number of tokens in a corpus
+          filter(speaker_role != "Target_Child") %>%
+          mutate(gloss = gloss %>%
+                   str_split(" "),
+                 phon = phon %>%
+                   str_split(" ")) %>%
+          (function(DF) {
+            DF %>%
+              group_by(corpus_id) %>%
+              group_split %>%
+              lapply(function(corpus_df) {
+                
+                
+                random_samples <- list()
+                
+                set.seed(48593)
+                for (i in 1:10) {
+                  random_samples[[i]] <- tibble(corpus_id = corpus_df$corpus_id[1],
+                                                random_sample = i,
+                                                word = corpus_df$gloss %>% unlist,
+                                                phon = corpus_df$phon %>% unlist) %>%
+                    sample_n(number_to_sample) %>%
+                    filter(!word %in% spok_bnc$plurals$word) %>%
+                    distinct(phon, .keep_all = TRUE) %>%
+                    left_join(., spok_bnc$lexical_measures, by = "phon") %>%
+                    filter(!is.na(freq))
+                }
+                
+                random_samples %>%
+                  bind_rows
+              })
+          }) %>%
+          bind_rows %>%
+          select(-word) %>%
+        rbind(
+          spok_bnc$all %>%
+            # create type tables of spoken bnc after sampling by minimum number of tokens in a child corpus
+            (function(DF) {
+              random_samples <- list()
+              
+              set.seed(48200)
+              for (i in 1:10) {
+                random_samples[[i]] <- DF %>%
+                  sample_n(number_to_sample) %>%
+                  distinct(phon) %>%
+                  inner_join(., spok_bnc$lexical_measures, by = c("phon")) %>%
+                  mutate(random_sample = i)
+              }
+              
+              random_samples %>%
+                bind_rows
+            }) %>%
+            mutate(corpus_id = "Spoken BNC") %>%
+            select(corpus_id, random_sample, phon, everything())
+      )
+    )
+  }) 
 
-corpora_input %<>%
-  arrange(year, month)
-  
-#vowels <- c("AA", "AE", "AH", "AO", "AW", "AY", "EH", "ER", 
-#            "EY", "IH", "IY", "OW", "OY", "UH", "UW") 
+# performance - tokens ------------------------------------------------------
+# delete printed chunks form output and save back
+#read_lines("PUDDLE_basic_output_chunks.txt") %>%
+#  {.[1:nrow(corpora_input)]} %>%
+#  write_lines(., "PUDDLE_basic_output.txt")
 
+#read_lines("PUDDLE_MLU_output_chunks.txt") %>%
+#{.[1:nrow(corpora_input_MLU)]} %>%
+#  write_lines(., "PUDDLE_MLU_output.txt")
 
-#write_lines(corpora_input$utt_phon_converted %>%
-#              str_replace("$", "|"), "input_PUDDLE_segmented.txt")
-#write_lines(corpora_input$utt_phon_converted %>%
-#              str_remove_all("[|]"), "input_PUDDLE_unsegmented.txt")
+segmentation$output <- "empty" %>%
+  # import output algorithms
+  (function(empty) {
+    import_output <- function(name_file, name_input) {
+      read_delim(name_file, 
+                 col_names = c("utt_id", "segmented_utt", "model_utt", 
+                               "word_tp", "word_fp", "word_fn", "word_acc", "word_rec"),
+                 delim = " ") %>%
+        (function(DF) {
+          name_input %>%
+            cbind(
+              DF %>%
+                select(-utt_id, -segmented_utt)
+            )
+        })
+    }
+    
+    list(puddle_basic = import_output("PUDDLE_basic_aligment.txt",
+                                      segmentation$input$basic),
+         puddle_mlu = import_output("PUDDLE_MLU_aligment.txt",
+                                    segmentation$input$mlu)
+    )
+  })
 
+segmentation$output %<>%
+  # add a colum with logical values 
+  # to indicate if a segment is a legal multiword sequence
+  # takes ~13min
+  lapply(function(DF) {
+    DF %>%
+      mutate(is_multiword_tp = sapply(1:nrow(.), function(i) {
+        model_utt[i] %>%
+          str_remove("\\|$") %>%
+          str_split("\\|") %>%
+          unlist %>%
+          fmatch(
+            adj_poss(phon_converted[i] %>%
+                       str_remove("\\|$") %>%
+                       str_split("\\|") %>%
+                       unlist) %>%
+              sapply(paste, collapse = "")) %>%
+              {!is.na(.)}
+      }))
+  })
 
-# performance PUDDLE ------------------------------------------------------
-puddle <- read_tsv("results_temp.txt", col_names = FALSE) %>%
-  separate(X1, c("utt_id", "segmented_utt", "model_utt", 
-                 "tp", "fp", "fn", "acc", "rec"), 
-           sep =" ") %>%
-  mutate(stage = rep(1:27, each = 1000),
-         year = corpora_input$year[27000])
+segmentation$output %<>%
+  # logical columns of multiword false alarms: 
+  # all undersegmented words or multi-word sequences
+  lapply(function(DF) {
+    DF %>%
+      mutate(is_multiword_fp = sapply(1:nrow(.), function(i) {
+        model_utt[i] %>%
+          str_remove("\\|$") %>%
+          str_split("\\|") %>%
+          unlist %>%
+          {.[!unlist(is_multiword_tp[i])]}
+      })) %>%
+      mutate(is_multiword_fp = sapply(1:nrow(.), function(i) {
+        !str_detect(phon_converted[i], is_multiword_fp[[i]])
+      }))
+  })
 
+segmentation$output %<>%
+  # count number of legal multiword sequences in each utterance
+  lapply(function(DF) {
+    DF %>%
+      mutate(multiword_tp = is_multiword_tp %>%
+               sapply(sum))
+  })
 
+segmentation$output %<>%
+  # 1) count multiword false alarms
+  # 2) accuracy legal multiword learnt for each utterance
+  lapply(function(DF) {
+    DF %>%
+      mutate(multiword_fp = is_multiword_fp %>%
+               sapply(sum),
+             multiword_acc = multiword_tp / (multiword_tp + multiword_fp))
+  })
+
+segmentation$input$unpacked <- "empty" %>%
+  # unpack utterances: create a column with a word for each observation
+  # takes ~10 min
+  (function(empty) {
+    unpack_utterances <- function(df) {
+      df %>%
+        mutate(phon = phon %>%
+                 str_split(" "),
+               part_of_speech = part_of_speech %>%
+                 str_split(" "),
+               row_id = 1:n(),
+               MLU = sapply(phon, length)) %>% 
+        group_by(target_child_age_year, row_id) %>%
+        group_split() %>%
+        lapply(function(sub_df) {
+          tibble(row_id = sub_df$row_id[1],
+                 target_child_age_year = sub_df$target_child_age_year[1],
+                 MLU = sub_df$MLU[1],
+                 phon = sub_df$phon %>% unlist)
+        }) %>%
+        bind_rows
+    }
+    
+    list(puddle_basic = unpack_utterances(
+      segmentation$output$puddle_basic
+    ),
+    puddle_mlu = unpack_utterances(
+      segmentation$output$puddle_mlu
+    ))
+  })
+
+segmentation$output %<>%
+  # create consecutive stages every 1k utterances
+  (function(LIST) {
+    LIST$puddle_basic %<>%
+      mutate(stage = c(rep(1:217, each = 1000), rep(217, 96))) %>%
+      {.[1:217000, ]}
+    
+    LIST$puddle_mlu %<>%
+      mutate(stage = c(rep(1:216, each = 1000), rep(216, 356))) %>%
+      {.[1:216000, ]}
+    
+    return(LIST)
+  })
+
+# performance - types  ------------------------------------------------
+spok_bnc$gram <- spok_bnc$all %>%
+  # most frequent grammatical category for each phonemic word
+  group_by(phon) %>%
+  count(pos) %>%
+  group_split %>%
+  lapply(function(sub_df) {
+    sub_df %>%
+      arrange(desc(n)) %>%
+      {.[1, ]}
+  }) %>%
+  bind_rows %>%
+  select(-n)
+
+segmentation$output$unpacked_chunks <- "empty" %>%
+  (function(empty) {
+    chunk_extraction <- function(DF) {
+       DF %>%
+        # extract puddle_basic chunks segmented
+        mutate(row_id = 1:n()) %>%
+        group_by(row_id) %>%
+        group_split %>%
+        lapply(function(sub_df) {
+          tibble(target_child_age_year = sub_df$target_child_age_year[1],
+                 utt_num = sub_df$row_id[1],
+                 utt_type = sub_df$utt_type[1],
+                 stage = sub_df$stage[1],
+                 phon_converted = sub_df$phon_converted[1],
+                 model_chunk = sub_df$model_utt[1] %>%
+                   str_remove("\\|$") %>%
+                   str_split("\\|") %>%
+                   unlist,
+                 is_multiword = sub_df$is_multiword_tp %>% unlist)
+        }) %>%
+        bind_rows %>%
+        # put the segmentation within the multiword chunks
+        mutate(phon_converted = phon_converted %>%
+                 str_remove("\\|$")) %>%
+        mutate(model_chunk_converted = sapply(1:n(), function(i) {
+          phon_converted[i] %>% 
+            str_split("\\|") %>%
+            unlist %>%
+            adj_poss %>%
+            (function(x) {
+              c(
+                sapply(x, paste, collapse = "|"),
+                sapply(x, paste, collapse = "")
+              )
+            }) %>%
+            matrix(ncol = 2) %>%
+            {.[, 1][fmatch(.[, 2], model_chunk[i], nomatch = FALSE) %>%
+                      as.logical]} %>%
+                      {.[1]}
+        })) %>%
+        # create a variable with phonetic transcription of chunk if it is a word
+        rowwise %>%
+        mutate(is_word = str_detect(phon_converted, 
+                                    paste("\\|", model_chunk, "\\|", sep = "") %>%
+                                      paste(paste("^", model_chunk, "$", sep = ""), sep = "|") %>%
+                                      paste(paste("\\|", model_chunk, "$", sep = ""), sep = "|") %>%
+                                      paste(paste("^", model_chunk, "\\|", sep = ""), sep = "|"))) %>% 
+        ungroup %>%
+        rowwise %>%
+        mutate(is_oversegmented = str_detect(phon_converted, 
+                                            paste("\\|", model_chunk, "[a-zA-Z]+\\|", sep = "") %>%
+                                              paste(paste("\\|[a-zA-Z]+", model_chunk, "\\|", sep = ""), sep = "|") %>%
+                                              paste(paste("\\|[a-zA-Z]+", model_chunk, "[a-zA-Z]+\\|", sep = ""), sep = "|") %>%
+                                              paste(paste("^", model_chunk, "[a-zA-Z]+\\|", sep = ""), sep = "|") %>%
+                                              paste(paste("^[a-zA-Z]+", model_chunk, "\\|", sep = ""), sep = "|") %>%
+                                              paste(paste("^[a-zA-Z]+", model_chunk, "[a-zA-Z]+\\|", sep = ""), sep = "|") %>%
+                                              paste(paste("\\|[a-zA-Z]+", model_chunk, "$", sep = ""), sep = "|") %>%
+                                              paste(paste("\\|", model_chunk, "[a-zA-Z]+$", sep = ""), sep = "|") %>%
+                                              paste(paste("\\|[a-zA-Z]+", model_chunk, "[a-zA-Z]+$", sep = ""), sep = "|") %>%
+                                              paste(paste("^", model_chunk, "[a-zA-Z]+$", sep = ""), sep = "|") %>%
+                                              paste(paste("^[a-zA-Z]+", model_chunk, "$", sep = ""), sep = "|") %>%
+                                              paste(paste("^[a-zA-Z]+", model_chunk, "[a-zA-Z]+$", sep = ""), sep = "|"))) %>% 
+        ungroup %>%
+        # logical: undersegmented chunk
+        mutate(is_undersegmented = ifelse(is_multiword == FALSE & is_word == FALSE & is_oversegmented == FALSE, 
+                                          TRUE,
+                                          FALSE))
+    } 
+    
+    segmentation$output %>%
+      lapply(chunk_extraction)
+  })
+
+segmentation$output$unpacked_chunks$types <- "empty" %>%
+  (function(empty) {
+    chunk_types <- function(DF) {
+      DF %>%
+        # calculate proportion of chunks by stage over number of chunks learned
+        mutate(rowid = 1:n()) %>%
+        group_by(model_chunk, is_multiword, is_word, is_undersegmented, is_oversegmented) %>%
+        filter(stage == min(stage)) %>%
+        filter(rowid == min(rowid)) %>%
+        ungroup %>% 
+        filter(!(is_word == TRUE & is_oversegmented == TRUE)) %>%
+        group_by(target_child_age_year, stage) %>%
+        summarise(multiword_prop = sum(is_multiword),
+                  word_prop = sum(is_word),
+                  undersegmented_prop = sum(is_undersegmented),
+                  oversegmented_prop = sum(is_oversegmented),
+                  n = n()) %>%
+        ungroup %>%
+        mutate(multiword_prop = cumsum(multiword_prop),
+               word_prop = cumsum(word_prop),
+               undersegmented_prop = cumsum(undersegmented_prop),
+               oversegmented_prop = cumsum(oversegmented_prop),
+               n = cumsum(n)) %>%
+        rowwise %>%
+        mutate(multiword_prop = multiword_prop / n,
+               word_prop = word_prop / n,
+               undersegmented_prop = undersegmented_prop / n,
+               oversegmented_prop = oversegmented_prop / n) %>%
+        ungroup
+    }
+    
+    segmentation$output$unpacked_chunks %>%
+      lapply(chunk_types)
+  })
