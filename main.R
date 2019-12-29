@@ -79,11 +79,13 @@ subset_utterances <- function(df, corpora_age, extension_random) {
 }
 
 save_input <- function(utt, file_name, segmented) {
+  path <- "/Users/francesco/Dropbox/phd/Incrementality/Segmentation/input/"
+  
   if (segmented == TRUE) {
-    write_lines(utt, file_name)
+    write_lines(utt, paste(path, file_name, sep = ""))
   } else if (segmented == FALSE) {
     write_lines(utt %>%
-                  str_remove_all("[|]"), file_name)
+                  str_remove_all("[|]"), paste(path, file_name, sep = ""))
   }
 }
 
@@ -322,13 +324,8 @@ segmentation$input$mlu <- corpora$all %>%
       ungroup
   })
 
-# load old dataset to match output, forgot to put set.seed(2199999) when sampling
-# REMINDER: rerun puddle with new corpora with set.seed and update script! 
-load("~/Dropbox/phd/Incrementality/analysis_R/corpora_input_MLU.RData")
-segmentation$input$mlu <- corpora_input_MLU
-rm(corpora_input_MLU)
-
 # save input to workspace
+
 #save_input(segmentation$input$basic$phon_converted,
 #           "input_basic_segmented.txt",
 #           segmented = TRUE)
@@ -337,11 +334,11 @@ rm(corpora_input_MLU)
 #           "input_basic_unsegmented.txt",
 #           segmented = FALSE)
 
-#save_input(segmentation$input$mlu$phon_converted,,
+#save_input(segmentation$input$mlu$phon_converted,
 #           "input_mlu_segmented.txt",
 #           segmented = TRUE)
 
-#save_input(segmentation$input$mlu$phon_converted,,
+#save_input(segmentation$input$mlu$phon_converted,
 #           "input_mlu_unsegmented.txt",
 #           segmented = FALSE)
 
@@ -481,15 +478,6 @@ randomisation <- "empty" %>%
   }) 
 
 # performance - tokens ------------------------------------------------------
-# delete printed chunks form output and save back
-#read_lines("PUDDLE_basic_output_chunks.txt") %>%
-#  {.[1:nrow(corpora_input)]} %>%
-#  write_lines(., "PUDDLE_basic_output.txt")
-
-#read_lines("PUDDLE_MLU_output_chunks.txt") %>%
-#{.[1:nrow(corpora_input_MLU)]} %>%
-#  write_lines(., "PUDDLE_MLU_output.txt")
-
 segmentation$output <- "empty" %>%
   # import output algorithms
   (function(empty) {
@@ -507,9 +495,15 @@ segmentation$output <- "empty" %>%
         })
     }
     
-    list(puddle_basic = import_output("PUDDLE_basic_aligment.txt",
+    path <- "/Users/francesco/Dropbox/phd/Incrementality/Segmentation/output/performance/"
+    
+    list(puddle_basic = import_output(paste(path, "PUDDLE_basic_alignment.txt", sep = ""),
                                       segmentation$input$basic),
-         puddle_mlu = import_output("PUDDLE_MLU_aligment.txt",
+         puddle_mlu = import_output(paste(path, "PUDDLE_mlu_alignment.txt", sep = ""),
+                                    segmentation$input$mlu),
+         ftp_basic = import_output(paste(path, "FTP_basic_alignment.txt", sep = ""),
+                                      segmentation$input$basic),
+         ftp_mlu = import_output(paste(path, "FTP_mlu_alignment.txt", sep = ""),
                                     segmentation$input$mlu)
     )
   })
@@ -517,7 +511,7 @@ segmentation$output <- "empty" %>%
 segmentation$output %<>%
   # add a colum with logical values 
   # to indicate if a segment is a legal multiword sequence
-  # takes ~13min
+  # takes ~30min
   lapply(function(DF) {
     DF %>%
       mutate(is_multiword_tp = sapply(1:nrow(.), function(i) {
@@ -598,6 +592,12 @@ segmentation$input$unpacked <- "empty" %>%
     ),
     puddle_mlu = unpack_utterances(
       segmentation$output$puddle_mlu
+    ),
+    ftp_basic = unpack_utterances(
+      segmentation$output$ftp_basic
+    ),
+    ftp_mlu = unpack_utterances(
+      segmentation$output$ftp_mlu
     ))
   })
 
@@ -609,6 +609,14 @@ segmentation$output %<>%
       {.[1:217000, ]}
     
     LIST$puddle_mlu %<>%
+      mutate(stage = c(rep(1:216, each = 1000), rep(216, 356))) %>%
+      {.[1:216000, ]}
+    
+    LIST$ftp_basic %<>%
+      mutate(stage = c(rep(1:217, each = 1000), rep(217, 96))) %>%
+      {.[1:217000, ]}
+    
+    LIST$ftp_mlu %<>%
       mutate(stage = c(rep(1:216, each = 1000), rep(216, 356))) %>%
       {.[1:216000, ]}
     
